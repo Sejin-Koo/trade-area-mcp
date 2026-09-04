@@ -80,23 +80,40 @@ jobs:
           SEOUL_OPENAPI_KEY: ${{ secrets.SEOUL_OPENAPI_KEY }}
         run: node scripts/build_dong_meta.mjs
 
-      - name: 구조 점검 (inspect)
-        if: ${{ steps.req.outputs.inspect == 'true' }}
-        run: node scripts/build_livingpop_archive.mjs --months ${{ steps.req.outputs.from }} --inspect
-
-      - name: 월별 집계 적재
-        if: ${{ steps.req.outputs.inspect != 'true' }}
-        run: node scripts/build_livingpop_archive.mjs --from ${{ steps.req.outputs.from }} --to ${{ steps.req.outputs.to }}
-
-      - name: 결과 요약
-        if: ${{ steps.req.outputs.inspect != 'true' }}
+      # ★ 실행 로그를 저장소에도 남긴다.
+      #   Actions 로그는 GitHub 로그인 없이는 읽을 수 없어, 로그인 세션이 없는 환경에서
+      #   실패 원인을 확인할 방법이 사라진다. 리포트를 커밋해 두면 git pull 로 읽을 수 있다.
+      - name: 실행 (로그를 리포트 파일에도 기록)
+        id: run
+        continue-on-error: true
         run: |
-          echo "## 생활인구 아카이브" >> $GITHUB_STEP_SUMMARY
-          ls -la data/livingpop | tail -n +2 | awk '{print $9, $5}' >> $GITHUB_STEP_SUMMARY
-          du -sh data/livingpop >> $GITHUB_STEP_SUMMARY
+          mkdir -p data/livingpop
+          REPORT=data/livingpop/LAST_RUN.txt
+          {
+            echo "실행시각(UTC): $(date -u +%FT%TZ)"
+            echo "요청: from=${{ steps.req.outputs.from }} to=${{ steps.req.outputs.to }} inspect=${{ steps.req.outputs.inspect }}"
+            echo "커밋: $GITHUB_SHA"
+            echo "----"
+          } > $REPORT
+          set +e
+          if [ "${{ steps.req.outputs.inspect }}" = "true" ]; then
+            node scripts/build_livingpop_archive.mjs --months ${{ steps.req.outputs.from }} --inspect 2>&1 | tee -a $REPORT
+          else
+            node scripts/build_livingpop_archive.mjs --from ${{ steps.req.outputs.from }} --to ${{ steps.req.outputs.to }} 2>&1 | tee -a $REPORT
+          fi
+          CODE=${PIPESTATUS[0]}
+          set -e
+          {
+            echo "----"
+            echo "종료코드: $CODE"
+            echo "아카이브 파일:"
+            ls -la data/livingpop | tail -n +2 | awk '{print "  " $9, $5}'
+            echo "총 용량: $(du -sh data/livingpop | cut -f1)"
+          } >> $REPORT
+          cat $REPORT >> $GITHUB_STEP_SUMMARY
+          echo "code=$CODE" >> $GITHUB_OUTPUT
 
       - name: 커밋
-        if: ${{ steps.req.outputs.inspect != 'true' }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -104,6 +121,13 @@ jobs:
           if git diff --staged --quiet; then
             echo "변경 없음"
           else
-            git commit -m "생활인구 아카이브 적재 ${{ steps.req.outputs.from }}~${{ steps.req.outputs.to }}"
+            git commit -m "생활인구 아카이브 ${{ steps.req.outputs.from }}~${{ steps.req.outputs.to }} (종료코드 ${{ steps.run.outputs.code }})"
+            git pull --rebase --autostash
             git push
           fi
+
+      - name: 종료코드 반영
+        if: ${{ steps.run.outputs.code != '0' }}
+        run: |
+          echo "::error::적재 스크립트가 종료코드 ${{ steps.run.outputs.code }} 로 끝났습니다. data/livingpop/LAST_RUN.txt 를 확인하세요."
+          exit 1
