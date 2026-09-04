@@ -55,20 +55,36 @@ await step("sbiz: 업종 대분류 코드", async () => {
   return { 건수: r.items.length, 예시: r.items.slice(0, 3) };
 });
 
-await step("permit: 영등포구 일반음식점 건수", async () => {
-  const r = await permit.fetchPermits({ type: "일반음식점", addrLike: "영등포구", numOfRows: 1 });
+await step("permit: 영등포구 일반음식점 건수 (지번주소 기준)", async () => {
+  const r = await permit.fetchPermits({ type: "일반음식점", region: "영등포구", numOfRows: 1 });
   return { 총건수: r.totalCount };
+});
+
+await step("permit: 지역필터 3종 커버리지 비교 (도로명 누락 검증)", async () => {
+  const q = async (o) => (await permit.fetchPermits({ type: "일반음식점", numOfRows: 1, ...o })).totalCount;
+  const out = {};
+  for (const [label, base] of [["지번주소", { region: "영등포구" }], ["자치단체코드", { orgCode: "3180000" }], ["도로명주소", { addrLike: "영등포구" }]]) {
+    out[label] = {
+      전체: await q(base),
+      영업중: await q({ ...base, salesStatus: "01" }),
+      폐업: await q({ ...base, salesStatus: "03" }),
+    };
+  }
+  out.판정 = out["도로명주소"].폐업 < out["지번주소"].폐업 * 0.8
+    ? "도로명주소로 좁히면 폐업이 크게 누락됨 — region(지번) 사용이 맞음"
+    : "차이 없음 (재확인 필요)";
+  return out;
 });
 
 await step("permit: 영등포구 일반음식점 2026년 개업 영업중", async () => {
   const r = await permit.fetchPermits({
-    type: "일반음식점", addrLike: "영등포구", salesStatus: "01", licenseFrom: "2026-01-01", numOfRows: 3,
+    type: "일반음식점", region: "영등포구", salesStatus: "01", licenseFrom: "2026-01-01", numOfRows: 3,
   });
   return { 총건수: r.totalCount, 표본: r.items.slice(0, 2).map(permit.slimPermit) };
 });
 
 await step("permit: numOfRows 상한 실측(1000 요청 → 100 기대)", async () => {
-  const r = await permit.fetchPermits({ type: "일반음식점", addrLike: "영등포구", numOfRows: 1000 });
+  const r = await permit.fetchPermits({ type: "일반음식점", region: "영등포구", numOfRows: 1000 });
   return { 요청: 1000, 반환: r.items.length, 응답numOfRows: r.numOfRows };
 });
 
@@ -77,7 +93,7 @@ await step("permit: 20개 업종 경로 전수 확인 (각 1건 조회)", async 
   const okList = [];
   for (const t of permit.PERMIT_TYPE_NAMES) {
     try {
-      const r = await permit.fetchPermits({ type: t, addrLike: "영등포구", numOfRows: 1 });
+      const r = await permit.fetchPermits({ type: t, region: "영등포구", numOfRows: 1 });
       okList.push(`${t}:${r.totalCount}`);
     } catch (e) {
       bad.push(`${t} → ${e.message.slice(0, 80)}`);
