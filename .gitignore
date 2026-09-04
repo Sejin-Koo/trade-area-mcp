@@ -22,3 +22,6 @@ tidy2.py
 status.py
 finalize.py
 push2.py
+vc_list.py
+vc_redeploy.py
+push3.py
