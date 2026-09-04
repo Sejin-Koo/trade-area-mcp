@@ -45,3 +45,17 @@ push8.py
 push7.py
 push9.py
 deploy.py
+chk.py
+chk2.py
+chk3.py
+chk4.py
+sbiz_probe.py
+sgis_raw.py
+vc_state.py
+verify_fix.py
+vc_why*.py
+vc_authors*.py
+vc_detail.py
+vc_check2.py
+gh_public.py
+scan_secrets.py
