@@ -161,15 +161,24 @@ function aggregate(text, ym) {
   const lines = text.split(/\r?\n/);
   let h = 0;
   while (h < lines.length && !lines[h].trim()) h++;
-  const delim = sniffDelimiter(lines[h]);
-  const { idx, norm } = buildIndex(lines[h].split(delim));
+  const headerDelim = sniffDelimiter(lines[h]);
+  const { idx, norm } = buildIndex(lines[h].split(headerDelim));
+
+  // ★ 헤더와 데이터의 구분자가 다른 파일이 실제로 있다(2026-09-04 실측: 2026-07).
+  //   헤더만 보고 판별하면 컬럼 매칭은 통과하는데 데이터 행이 전부 걸러져
+  //   "한 줄도 파싱하지 못했다"로 끝난다. 데이터 구분자는 따로 판별한다.
+  let firstData = "";
+  for (let i = h + 1; i < lines.length; i++) {
+    if (lines[i] && lines[i].trim()) { firstData = lines[i]; break; }
+  }
+  const delim = firstData ? sniffDelimiter(firstData) : headerDelim;
 
   const need = ["ymd", "tt", "dong", "spop", "m00", "f70"];
   const missing = need.filter((k) => idx[k] === undefined);
   if (missing.length) {
     throw new Error(
       `${ym} 헤더에서 필수 컬럼을 찾지 못했습니다: ${missing.join(", ")}\n` +
-        `실제 헤더(${norm.length}열, 구분자 ${JSON.stringify(delim)}): ${norm.slice(0, 40).join(" | ")}`
+        `실제 헤더(${norm.length}열, 구분자 ${JSON.stringify(headerDelim)}): ${norm.slice(0, 40).join(" | ")}`
     );
   }
 
@@ -217,12 +226,16 @@ function aggregate(text, ym) {
   }
 
   if (!parsed) {
-    throw new Error(`${ym} 데이터 행을 한 줄도 파싱하지 못했습니다. 첫 데이터 줄: ${(lines[h + 1] || "").slice(0, 300)}`);
+    throw new Error(
+      `${ym} 데이터 행을 한 줄도 파싱하지 못했습니다. ` +
+        `구분자 헤더 ${JSON.stringify(headerDelim)} / 데이터 ${JSON.stringify(delim)}, 헤더 ${norm.length}열. ` +
+        `첫 데이터 줄: ${firstData.slice(0, 300)}`
+    );
   }
 
   const dongs = new Set([...acc.values()].map((a) => a.dong)).size;
   const hours = new Set([...acc.values()].map((a) => a.tt)).size;
-  return { acc, parsed, days: days.size, dongs, hours, delim, header: norm };
+  return { acc, parsed, days: days.size, dongs, hours, delim, headerDelim, header: norm };
 }
 
 /** 한 칸을 읽는다 — 따옴표·공백 패딩·BOM 제거 */
@@ -276,18 +289,19 @@ for (const ym of months) {
     }
 
     const text = decode(fs.readFileSync(inner));
-    const { acc, parsed, days, dongs, hours, delim, header } = aggregate(text, ym);
+    const { acc, parsed, days, dongs, hours, delim, headerDelim, header } = aggregate(text, ym);
     // 조용히 반쪽이 되는 것을 막는 최소 검증. 서울 행정동은 427개, 시간은 24개다.
     if (!LOCAL_FILE && (dongs < 400 || hours < 24)) {
       throw new Error(
         `${ym} 집계 결과가 비정상입니다 — 행정동 ${dongs}개(기대 427), 시간 ${hours}개(기대 24). ` +
-          `파싱행 ${parsed}, 일수 ${days}. 구분자 ${JSON.stringify(delim)}. 헤더 매칭이나 따옴표 처리를 의심할 것.`
+          `파싱행 ${parsed}, 일수 ${days}. 구분자 헤더 ${JSON.stringify(headerDelim)} / 데이터 ${JSON.stringify(delim)}. ` +
+          `헤더 매칭이나 따옴표 처리를 의심할 것.`
       );
     }
 
     if (INSPECT) {
       console.log(`[${ym}] zip ${bytes}B / 내부파일 ${files.join(", ")}`);
-      console.log(`  구분자 ${JSON.stringify(delim)} / 컬럼 ${header.length}개`);
+      console.log(`  구분자 헤더 ${JSON.stringify(headerDelim)} / 데이터 ${JSON.stringify(delim)} / 컬럼 ${header.length}개`);
       console.log(`  헤더: ${header.join(" | ")}`);
       console.log(`  파싱행 ${parsed} / 일수 ${days} / 행정동 ${dongs} / 시간 ${hours} / 집계키 ${acc.size}`);
       continue;
