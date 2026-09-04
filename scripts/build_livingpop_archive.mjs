@@ -308,7 +308,10 @@ for (const ym of months) {
     }
 
     const w = writeMonth(ym, acc);
-    report.push({ 월: ym, 원본행: parsed, 일수: days, 집계행: w.행수, gz바이트: w.바이트 });
+    report.push({ 월: ym, 원본행: parsed, 일수: days, 행정동: dongs, 집계행: w.행수, gz바이트: w.바이트 });
+    if (days < 28) {
+      console.log(`  ⚠ ${ym} 은 ${days}일치뿐입니다 — 원본이 아직 그 달 전체를 공개하지 않았을 수 있습니다.`);
+    }
     console.log(`[${ym}] 원본 ${parsed}행(${days}일, 행정동 ${dongs}) → 집계 ${w.행수}행, ${(w.바이트 / 1024).toFixed(0)}KB`);
   } catch (e) {
     console.error(`[${ym}] 실패 — ${e.message}`);
@@ -321,14 +324,23 @@ for (const ym of months) {
 
 if (!INSPECT && report.length) {
   const months2 = fs.readdirSync(OUT_DIR).filter((f) => /^\d{6}\.csv\.gz$/.test(f)).map((f) => f.slice(0, 6)).sort();
+  const idxPath = path.join(OUT_DIR, "index.json");
+  let prev = {};
+  try { prev = JSON.parse(fs.readFileSync(idxPath, "utf8")).월별 || {}; } catch {}
+  for (const r of report) prev[r.월] = { 일수: r.일수, 행정동: r.행정동, 집계행: r.집계행 };
+  // 원본이 그 달 전체를 아직 공개하지 않은 경우가 있어(2026-09-04 실측: 2026-07 이 1일치)
+  // 일수를 기록해 둔다. 월간 워크플로가 이 값을 보고 불완전한 달을 다시 받는다.
+  const 불완전 = months2.filter((m) => prev[m] && prev[m].일수 < 28);
   fs.writeFileSync(
-    path.join(OUT_DIR, "index.json"),
+    idxPath,
     JSON.stringify(
       {
         데이터셋: "[내국인] 행정동별 서울 생활인구(250m) / OA-23016",
         집계: "월평균 (평일 W = 월~금, 주말 E = 토·일). 시간 24 × 성별 2 × 연령 14 교차는 원자료 그대로 보존",
         보유월: months2,
         보유월수: months2.length,
+        불완전한월: 불완전,
+        월별: prev,
         최종갱신: new Date().toISOString(),
       },
       null,
