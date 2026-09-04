@@ -33,11 +33,20 @@ const ALIAS = {
   spop: ["SPOP", "총생활인구수", "생활인구합계", "TOT_LVPOP_CO"],
 };
 for (const k of AGE_KEYS) {
-  ALIAS["m" + k] = ["M" + k, `남자${ageLabel(k)}생활인구수`, `MAN_FLOW_POP_CNT_${k}`];
-  ALIAS["f" + k] = ["F" + k, `여자${ageLabel(k)}생활인구수`, `WMAN_FLOW_POP_CNT_${k}`];
+  ALIAS["m" + k] = ["M" + k, `남자${tilde(k)}`, `남자${wordy(k)}생활인구수`, `MAN_FLOW_POP_CNT_${k}`];
+  ALIAS["f" + k] = ["F" + k, `여자${tilde(k)}`, `여자${wordy(k)}생활인구수`, `WMAN_FLOW_POP_CNT_${k}`];
 }
 
-function ageLabel(k) {
+// 2026-09-04 실측 — 202601 원본의 실제 헤더는 "남자 0~9세" 꼴이다(공백 포함).
+// 비교는 공백을 모두 지운 뒤 하므로 여기서는 공백 없이 적는다.
+function tilde(k) {
+  if (k === "00") return "0~9세";
+  if (k === "70") return "70세이상";
+  const a = Number(k);
+  return `${a}~${a + 4}세`;
+}
+// 구 데이터셋(OA-14991)에서 쓰던 서술형. 후속 포맷 변경에 대비해 남겨 둔다.
+function wordy(k) {
   if (k === "00") return "0세부터9세";
   if (k === "70") return "70세이상";
   const a = Number(k);
@@ -126,13 +135,18 @@ function sniffDelimiter(headerLine) {
   return best;
 }
 
+// 공백·따옴표·BOM 을 지우고 비교한다. 원본 헤더에 "남자 0~9세" 처럼 공백이 들어 있고,
+// 포맷이 바뀔 때 공백만 달라지는 일이 잦아 처음부터 무시하는 편이 안전하다.
+const squash = (h) => String(h).replace(/^\uFEFF/, "").replace(/["']/g, "").replace(/\s+/g, "").toUpperCase();
+
 function buildIndex(headerCells) {
-  const norm = headerCells.map((h) => h.replace(/^﻿/, "").replace(/["']/g, "").trim());
+  const norm = headerCells.map((h) => h.replace(/^\uFEFF/, "").replace(/["']/g, "").trim());
+  const flat = norm.map(squash);
   const idx = {};
   for (const [field, names] of Object.entries(ALIAS)) {
     let at = -1;
     for (const n of names) {
-      at = norm.findIndex((h) => h.toUpperCase() === n.toUpperCase());
+      at = flat.indexOf(squash(n));
       if (at >= 0) break;
     }
     if (at >= 0) idx[field] = at;
