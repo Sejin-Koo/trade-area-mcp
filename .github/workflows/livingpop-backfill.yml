@@ -1,0 +1,75 @@
+name: livingpop-backfill
+
+# 서울 생활인구 과거 월별 집계 아카이브를 만든다.
+# 서울시 파일 서버는 클라우드 샌드박스에서 접속이 막혀 있어 이 러너에서만 돌 수 있다.
+#
+# inspect=true 로 먼저 한 달을 돌려 원자료의 헤더·구분자·인코딩을 로그로 확인한 뒤
+# 전체 구간을 적재하는 것을 권장한다(에러 없이 0건이 나오는 사고를 막는 단계다).
+
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "시작 월 YYYYMM (원본 최초 제공월은 202301)"
+        required: true
+        default: "202301"
+      to:
+        description: "종료 월 YYYYMM"
+        required: true
+        default: "202607"
+      inspect:
+        description: "true 면 적재하지 않고 파일 구조만 로그에 찍는다"
+        required: false
+        default: "false"
+      rebuild_dong_meta:
+        description: "true 면 행정동코드-이름 매핑도 다시 만든다"
+        required: false
+        default: "true"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: 행정동 매핑 생성
+        if: ${{ github.event.inputs.rebuild_dong_meta == 'true' && github.event.inputs.inspect != 'true' }}
+        env:
+          SEOUL_OPENAPI_KEY: ${{ secrets.SEOUL_OPENAPI_KEY }}
+        run: node scripts/build_dong_meta.mjs
+
+      - name: 구조 점검 (inspect)
+        if: ${{ github.event.inputs.inspect == 'true' }}
+        run: node scripts/build_livingpop_archive.mjs --months ${{ github.event.inputs.from }} --inspect
+
+      - name: 월별 집계 적재
+        if: ${{ github.event.inputs.inspect != 'true' }}
+        run: node scripts/build_livingpop_archive.mjs --from ${{ github.event.inputs.from }} --to ${{ github.event.inputs.to }}
+
+      - name: 결과 요약
+        if: ${{ github.event.inputs.inspect != 'true' }}
+        run: |
+          echo "## 생활인구 아카이브" >> $GITHUB_STEP_SUMMARY
+          ls -la data/livingpop | tail -n +2 | awk '{print $9, $5}' >> $GITHUB_STEP_SUMMARY
+          du -sh data/livingpop >> $GITHUB_STEP_SUMMARY
+
+      - name: 커밋
+        if: ${{ github.event.inputs.inspect != 'true' }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/livingpop
+          if git diff --staged --quiet; then
+            echo "변경 없음"
+          else
+            git commit -m "생활인구 아카이브 적재 ${{ github.event.inputs.from }}~${{ github.event.inputs.to }}"
+            git push
+          fi
