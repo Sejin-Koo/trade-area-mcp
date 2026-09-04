@@ -124,8 +124,10 @@ function decode(buf) {
   return utf8;
 }
 
+// 2026-09-04 실측: 같은 데이터셋인데 2026-07 파일만 세미콜론 구분이었다.
+// 달마다 다를 수 있으므로 파일별로 매번 판별한다.
 function sniffDelimiter(headerLine) {
-  const cands = [",", "\t", "|", ";"];
+  const cands = [",", ";", "\t", "|"];
   let best = ",";
   let bestN = 0;
   for (const c of cands) {
@@ -182,11 +184,14 @@ function aggregate(text, ym) {
     const c = line.split(delim);
     if (c.length < norm.length - 2) continue;
 
-    const ymd = String(c[idx.ymd]).replace(/["']/g, "").trim();
+    // ★ 값이 따옴표로 감싸여 온다("20230101","0",...). 어느 칸이든 벗겨서 읽을 것.
+    //   2026-09-04 실측 사고: ymd·dong 만 벗기고 tt 를 그대로 Number() 에 넣어
+    //   Number('"0"') = NaN 이 되면서 43개월 전부가 0행으로 끝났다.
+    const ymd = cell(c, idx.ymd);
     if (ymd.length !== 8) continue;
-    const tt = Number(String(c[idx.tt]).trim());
+    const tt = Number(cell(c, idx.tt));
     if (!Number.isFinite(tt)) continue;
-    const dong = String(c[idx.dong]).replace(/["']/g, "").trim();
+    const dong = cell(c, idx.dong);
     if (!dong) continue;
 
     days.add(ymd);
@@ -215,8 +220,13 @@ function aggregate(text, ym) {
     throw new Error(`${ym} 데이터 행을 한 줄도 파싱하지 못했습니다. 첫 데이터 줄: ${(lines[h + 1] || "").slice(0, 300)}`);
   }
 
-  return { acc, parsed, days: days.size, delim, header: norm };
+  const dongs = new Set([...acc.values()].map((a) => a.dong)).size;
+  const hours = new Set([...acc.values()].map((a) => a.tt)).size;
+  return { acc, parsed, days: days.size, dongs, hours, delim, header: norm };
 }
+
+/** 한 칸을 읽는다 — 따옴표·공백 패딩·BOM 제거 */
+const cell = (arr, i) => String(arr[i] == null ? "" : arr[i]).replace(/^\uFEFF/, "").replace(/["']/g, "").trim();
 
 const num = (v) => {
   const n = Number(String(v == null ? "" : v).replace(/["',\s]/g, ""));
@@ -266,19 +276,26 @@ for (const ym of months) {
     }
 
     const text = decode(fs.readFileSync(inner));
-    const { acc, parsed, days, delim, header } = aggregate(text, ym);
+    const { acc, parsed, days, dongs, hours, delim, header } = aggregate(text, ym);
+    // 조용히 반쪽이 되는 것을 막는 최소 검증. 서울 행정동은 427개, 시간은 24개다.
+    if (!LOCAL_FILE && (dongs < 400 || hours < 24)) {
+      throw new Error(
+        `${ym} 집계 결과가 비정상입니다 — 행정동 ${dongs}개(기대 427), 시간 ${hours}개(기대 24). ` +
+          `파싱행 ${parsed}, 일수 ${days}. 구분자 ${JSON.stringify(delim)}. 헤더 매칭이나 따옴표 처리를 의심할 것.`
+      );
+    }
 
     if (INSPECT) {
       console.log(`[${ym}] zip ${bytes}B / 내부파일 ${files.join(", ")}`);
       console.log(`  구분자 ${JSON.stringify(delim)} / 컬럼 ${header.length}개`);
       console.log(`  헤더: ${header.join(" | ")}`);
-      console.log(`  파싱행 ${parsed} / 일수 ${days} / 집계키 ${acc.size}`);
+      console.log(`  파싱행 ${parsed} / 일수 ${days} / 행정동 ${dongs} / 시간 ${hours} / 집계키 ${acc.size}`);
       continue;
     }
 
     const w = writeMonth(ym, acc);
     report.push({ 월: ym, 원본행: parsed, 일수: days, 집계행: w.행수, gz바이트: w.바이트 });
-    console.log(`[${ym}] 원본 ${parsed}행(${days}일) → 집계 ${w.행수}행, ${(w.바이트 / 1024).toFixed(0)}KB`);
+    console.log(`[${ym}] 원본 ${parsed}행(${days}일, 행정동 ${dongs}) → 집계 ${w.행수}행, ${(w.바이트 / 1024).toFixed(0)}KB`);
   } catch (e) {
     console.error(`[${ym}] 실패 — ${e.message}`);
     process.exitCode = 1;
