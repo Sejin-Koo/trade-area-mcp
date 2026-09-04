@@ -1,0 +1,18 @@
+{
+  "name": "trade-area-mcp",
+  "version": "1.0.0",
+  "description": "상권분석 MCP 서버 — 소상공인 상가정보(점포·업종), 행정안전부 인허가 20종(개·폐업 이력), 통계지리정보 SGIS(배후인구·사업체), 서울 상권분석서비스(추정매출·유동인구)를 좌표변환까지 묶어 제공",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "node smoke.mjs"
+  },
+  "keywords": ["mcp", "상권분석", "trade-area"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3",
+    "proj4": "^2.12.1"
+  }
+}
