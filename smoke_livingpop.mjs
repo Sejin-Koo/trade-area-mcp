@@ -76,7 +76,9 @@ function makeMonth(ym, scale) {
 }
 
 const backup = fs.readdirSync(DATA);
-fs.writeFileSync(path.join(DATA, "dong_meta.json"), JSON.stringify({
+const metaPath = path.join(DATA, "dong_meta.json");
+const metaBackup = fs.existsSync(metaPath) ? fs.readFileSync(metaPath) : null;
+fs.writeFileSync(metaPath, JSON.stringify({
   "11560540": { 동: "여의동", 자치구: "영등포구" },
   "11110515": { 동: "청운효자동", 자치구: "종로구" },
 }));
@@ -130,7 +132,8 @@ check("시간대 합집합이 0~23 전부", Object.values(lv.TIME_BANDS).flat().
 
 // ── 정리 ────────────────────────────────────────────────────────────────────
 for (const f of fs.readdirSync(DATA)) if (!backup.includes(f)) fs.rmSync(path.join(DATA, f));
-fs.writeFileSync(path.join(DATA, "dong_meta.json"), "{}\n");
+if (metaBackup) fs.writeFileSync(metaPath, metaBackup);
+else fs.writeFileSync(metaPath, "{}\n");
 fs.rmSync(tmp, { recursive: true, force: true });
 
 console.log(`\n통과 ${pass} / 실패 ${fail}`);
