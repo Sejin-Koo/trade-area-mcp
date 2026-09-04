@@ -7,3 +7,5 @@ secrets.json
 smoke_out/
 build_commit.py
 do_push.py
+build_commit.py
+do_push.py
