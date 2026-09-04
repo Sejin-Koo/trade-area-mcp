@@ -9,3 +9,12 @@ build_commit.py
 do_push.py
 build_commit.py
 do_push.py
+vc_setup.py
+vc_env.py
+vc_check.py
+vc_state.json
+vc_deploy.json
+deploy_vercel.py
+check_repo.py
+mcp_verify.py
+tidy.py
