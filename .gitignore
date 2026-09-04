@@ -18,3 +18,6 @@ deploy_vercel.py
 check_repo.py
 mcp_verify.py
 tidy.py
+tidy2.py
+status.py
+finalize.py
