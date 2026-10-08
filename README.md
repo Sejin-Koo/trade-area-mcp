@@ -30,6 +30,17 @@
 | `seoul_trade_areas` | 서울 상권 검색 → 상권코드 |
 | `seoul_trade_area_stats` | 서울 상권 추정매출·유동인구·상주/직장인구·점포·집객시설 |
 | `trade_area_report` | 좌표 하나로 상권 종합 프로파일 |
+| `naver_geocode` | 네이버 지오코딩 — 주소 → WGS84 좌표(원값), 건물 단위 매칭 여부, `stores_nearby` 에 넣을 `{lon, lat}` |
+| `naver_reverse_geocode` | 네이버 역지오코딩 — 좌표 → 법정동·행정동 코드(소상공인 `adongCd`·`signguCd` 형식 포함), 지번·도로명 주소 |
+| `naver_directions` | 네이버 자동차 길찾기 — 좌표 또는 주소로 거리(km)·소요시간(분)·통행료·택시요금·유류비(원). 경유지 수로 Directions 5/15 자동 선택 |
+| `naver_static_map` | 네이버 정적 지도 이미지(MCP image) — 중심·레벨·크기, 다중 마커 |
+
+> **네이버 지도 도구 과금 안내** — 네이버 지도 API의 무료 이용량은 대표 계정 1개에만 적용되며,
+> 대표 계정이 아닌 계정으로 호출하면 호출마다 과금됩니다. 상품별 무료 이용량은
+> [네이버 클라우드 요금 페이지](https://www.ncloud.com/product/applicationService/maps)에서 확인하십시오.
+> 이 서버는 호출 상한을 두지 않는 대신 네 도구의 설명과 **모든 응답**(`과금안내` 필드, 오류 응답 포함)에
+> 이 안내와 이번 응답의 네이버 API 호출 수를 싣습니다. 무료 이용량 수치는 바뀐 적이 있어(2025-07)
+> 코드에 넣지 않았습니다. Directions 15 는 Directions 5 와 별도 상품이고 무료 이용량이 더 작습니다.
 
 ## 환경변수
 
@@ -39,6 +50,8 @@
 | `SGIS_SERVICE_ID` | SGIS 서비스 ID |
 | `SGIS_SECURITY_KEY` | SGIS 보안 Key |
 | `SEOUL_OPENAPI_KEY` | 서울 열린데이터광장 인증키 |
+| `NAVER_MAPS_CLIENT_ID` | 네이버 클라우드 Maps Application Client ID (`x-ncp-apigw-api-key-id`) |
+| `NAVER_MAPS_CLIENT_SECRET` | 네이버 클라우드 Maps Application Client Secret (`x-ncp-apigw-api-key`) |
 | `MCP_GATE_KEYS` | 접근 게이트 허용 키 목록(쉼표 구분) |
 | `MCP_GATE_MODE` | `enforce` 또는 `observe` |
 
@@ -76,11 +89,44 @@
   최신 기준년분기는 `20254`(2025년 4분기)이고, 2021년 이후 자료만 제공됩니다(2026-07-03 축소).
 - **소상공인 상가정보는 1회 1,000건까지** 정상 반환됩니다.
 
+## 네이버 지도 실측 (2026-10-08)
+
+- **지오코딩은 주소 전용입니다.** `강남역`, `서울특별시 강남구 역삼동 강남역` 처럼 장소명이 들어가면 0건입니다.
+  `서울특별시 강남구 역삼동` 처럼 동까지만 주면 `BUILDING_NUMBER`·`LAND_NUMBER` 가 빈 **동 대표점**
+  (127.033357, 37.495484 — 역지오코딩의 동 중심과 같은 값)이 옵니다. 그래서 SGIS 가 동 대표점으로
+  폴백하는 입력을 네이버가 건물 단위로 바꿔 주지는 못합니다. `resolve_region` 의 `두번째의견` 은 대조용입니다.
+
+  | 입력 | SGIS(`resolve_region`) | 네이버(`naver_geocode`) | 두 좌표 거리 |
+  |---|---|---|---:|
+  | 서울특별시 강남구 역삼동 강남역 | 동 대표점 (127.039215, 37.499277) | 0건 | — |
+  | 서울특별시 강남구 역삼동 | 동 대표점 (127.039215, 37.499277) | 동 대표점 (127.033357, 37.495484) | 667 m |
+  | 역삼동 819-2 | 지번 매칭 | 건물 매칭 — 강남대로94길 18 (127.0288330, 37.4993968) | 0.9 m |
+  | 서울특별시 강남구 강남대로 396 | 건물 매칭(강남역) | 건물 매칭 — 역삼동 858 (127.0283079, 37.4981647) | 1.4 m |
+  | 서울특별시 강남구 테헤란로 340 | 건물 매칭(선릉역) | 건물 매칭 — 삼성동 172-66 (127.0489425, 37.5045028) | 0.4 m |
+
+- 좌표 `x`·`y` 는 소수 7자리 **문자열**로 옵니다. 도구는 반올림 없이 숫자로만 바꿉니다.
+- 역지오코딩 행정동 10자리 코드의 앞 8자리 = 소상공인 상가정보 행정동코드
+  (역삼동 819-2 → `1168064000` → `11680640`, `stores_nearby` 응답과 일치). SGIS `adm_cd`(`11230640`)와는 다른 체계입니다.
+- 경계 부근은 지오코딩 지번과 역지오코딩 법정동이 어긋날 수 있습니다(테헤란로 340: 지오코딩 `삼성동 172-66`,
+  같은 좌표 역지오코딩 법정동 `역삼동`).
+- 길찾기 경유지 상한: Directions 5 는 5개, Directions 15 는 15개(초과 시 400 `'waypoints' has too many waypoints`).
+  옵션은 `trafast:traavoidtoll` 처럼 `:` 로 묶어 한 번에 여러 경로를 받을 수 있습니다. 출발=도착이면 400 `code 1`,
+  도로에서 먼 좌표는 400 `code 2`. 응답 `summary` 의 `distance` 는 m, `duration` 은 ms 입니다.
+- 정적 지도: 기본 형식 JPEG(`format=png|png8` 가능, `gif` 는 조용히 PNG). 실측 상한 **w 4096·h 2048**,
+  `scale` 1|2, `level` 0~21. 이를 벗어나거나 `maptype`·마커 문법이 틀리면 **403 + 빈 본문**
+  (`x-ncp-apigw-response-origin: ENDPOINT`)이 옵니다 — 인증 오류가 아닙니다. 중심이 바다·국외면 오류 없이
+  빈 바다 이미지가 옵니다. 마커 `type:n` 은 한 자리 숫자 라벨만 그려지고(`12`·`A` 는 라벨 없음), `type:t` 는 텍스트
+  라벨, `size` 는 tiny|small|mid(`large` 는 403). 도구는 크기를 1024×1024 로 제한합니다.
+- 인증: 키가 틀리거나 없으면 모든 API 가 401(`Authentication Failed`, origin `APIGW`). Application 에 해당 API 를
+  선택하지 않은 경우에도 401 이 납니다. 429(한도 초과)는 재시도하지 않습니다.
+
 ## 스모크 테스트
 
 ```bash
 npm install
 DATA_PORTAL_KEY=... SGIS_SERVICE_ID=... SGIS_SECURITY_KEY=... SEOUL_OPENAPI_KEY=... node smoke.mjs
+# 네이버 지도 도구 (MCP 인메모리 전송으로 도구를 직접 호출 — 네이버 API 를 30회 남짓 실제 호출하므로 과금될 수 있음)
+NAVER_MAPS_CLIENT_ID=... NAVER_MAPS_CLIENT_SECRET=... node smoke_naver.mjs
 ```
 
 ## 인허가 조회 가능 업종 (20종)
