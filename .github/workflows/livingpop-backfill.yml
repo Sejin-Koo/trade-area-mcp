@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       from:
-        description: "시작 월 YYYYMM (원본 최초 제공월은 202301)"
+        description: "시작 월 YYYYMM (원본 최초 제공월은 202301. 보존기간 36개월 밖의 달은 적재 뒤 바로 지워진다)"
         required: true
         default: "202301"
       to:
@@ -102,6 +102,9 @@ jobs:
             node scripts/build_livingpop_archive.mjs --from ${{ steps.req.outputs.from }} --to ${{ steps.req.outputs.to }} 2>&1 | tee -a $REPORT
           fi
           CODE=${PIPESTATUS[0]}
+          if [ "${{ steps.req.outputs.inspect }}" != "true" ]; then
+            LIVINGPOP_RETAIN_MONTHS=36 node scripts/prune_livingpop.mjs 2>&1 | tee -a $REPORT
+          fi
           set -e
           {
             echo "----"

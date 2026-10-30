@@ -4,8 +4,8 @@ name: livingpop-monthly
 # 서울시는 대략 한 달 반쯤 뒤에 그 달 파일을 올리므로, 최근 3개월을 훑어
 # 아직 없는 달만 채우는 방식으로 둔다(공개 지연에 강하다).
 #
-# 보존기간은 두지 않는다 — 2023-01 전량을 유지한다.
-# 한 달치가 gzip 약 0.7MB라 연 10MB 미만이고, 과거 비교가 이 데이터의 존재 이유다.
+# 보존기간은 3년(36개월)이다(2026-10-30 사용자 결정). 적재 뒤 보유 최종월부터 거슬러
+# 36개월보다 오래된 달을 scripts/prune_livingpop.mjs 가 지운다. 바꾸려면 아래 env 값만 고친다.
 
 on:
   schedule:
@@ -53,6 +53,11 @@ jobs:
         # 아직 공개되지 않은 달은 실패하는 것이 정상이므로 종료코드로 잡을 실패가 아니다.
         continue-on-error: true
         run: node scripts/build_livingpop_archive.mjs --months ${{ steps.plan.outputs.months }}
+
+      - name: 보존기간 정리
+        env:
+          LIVINGPOP_RETAIN_MONTHS: "36"
+        run: node scripts/prune_livingpop.mjs
 
       - name: 커밋
         run: |
