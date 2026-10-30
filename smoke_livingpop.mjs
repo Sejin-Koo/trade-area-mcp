@@ -76,6 +76,14 @@ function makeMonth(ym, scale) {
 }
 
 const backup = fs.readdirSync(DATA);
+// ★ 시험용 월 파일 이름(202409·202509)이 실제 아카이브 월과 겹친다. 덮어쓰기 전에 원본 바이트를
+//   보관했다가 정리 단계에서 되돌린다(2026-09-04 이 단계가 없어 실제 두 달이 시험 데이터 96행으로
+//   바뀐 채 커밋됐고, 2026-10-30에 발견해 원본으로 복구했다).
+const monthBackup = {};
+for (const ym of ["202409", "202509"]) {
+  const p = path.join(DATA, `${ym}.csv.gz`);
+  if (fs.existsSync(p)) monthBackup[ym] = fs.readFileSync(p);
+}
 const metaPath = path.join(DATA, "dong_meta.json");
 const metaBackup = fs.existsSync(metaPath) ? fs.readFileSync(metaPath) : null;
 fs.writeFileSync(metaPath, JSON.stringify({
@@ -132,6 +140,7 @@ check("시간대 합집합이 0~23 전부", Object.values(lv.TIME_BANDS).flat().
 
 // ── 정리 ────────────────────────────────────────────────────────────────────
 for (const f of fs.readdirSync(DATA)) if (!backup.includes(f)) fs.rmSync(path.join(DATA, f));
+for (const [ym, buf] of Object.entries(monthBackup)) fs.writeFileSync(path.join(DATA, `${ym}.csv.gz`), buf);
 if (metaBackup) fs.writeFileSync(metaPath, metaBackup);
 else fs.writeFileSync(metaPath, "{}\n");
 fs.rmSync(tmp, { recursive: true, force: true });
